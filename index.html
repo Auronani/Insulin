@@ -1,224 +1,506 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IOB Calculator — v4 (Clean Rebuild)</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>IOB App — Jade + Smoothstep, Legacy Rounding</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
-  :root { --pad: 14px; --radius: 14px; }
+  :root {
+    --bg: #0f172a; --panel: #111827; --card: #1f2937; --text: #e5e7eb; --muted: #9ca3af;
+    --accent: #22d3ee; --shadow: 0 10px 25px rgba(0,0,0,.25); --radius: 18px; --gap: 14px;
+  }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; color: #111; background: #f7f7f8; }
-  header { position: sticky; top: 0; background: white; padding: var(--pad); border-bottom: 1px solid #e6e6ea; z-index: 10; }
-  h1 { font-size: 20px; margin: 0 0 4px 0; }
-  .subtle { color: #666; font-size: 13px; }
-  main { padding: var(--pad); padding-bottom: 190px; max-width: 980px; margin: 0 auto; }
-  section { background: white; border: 1px solid #e6e6ea; border-radius: var(--radius); padding: var(--pad); margin-bottom: var(--pad); }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); }
-  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--pad); }
-  .row-4 { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: var(--pad); }
-  label { font-size: 13px; color: #333; display: block; margin-bottom: 6px; }
-  input, select, button { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #d9d9df; font-size: 16px; background: #fff; }
-  button { background: #111; color: white; border: none; cursor: pointer; }
-  button.secondary { background: #f0f0f3; color: #333; border: 1px solid #d9d9df; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
-  th { color: #666; font-weight: 600; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background: radial-gradient(1200px 800px at 10% 0%, #0b1226 10%, var(--bg) 60%); color: var(--text); }
+  header { position: sticky; top: 0; z-index: 10; padding: 16px; border-bottom: 1px solid #1f2a44;
+    background: linear-gradient(180deg, rgba(15,23,42,0.9), rgba(15,23,42,0.5), rgba(15,23,42,0)); backdrop-filter: blur(8px); }
+  h1 { margin: 0 0 4px; font-size: 1.1rem; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+  @media (min-width: 900px){ .container{ grid-template-columns: 1.15fr .85fr; align-items: start; } }
+  .card { background: linear-gradient(180deg, #1b2437, #111827); border: 1px solid #1f2a44; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;}
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row > * { flex: 1; }
+  .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #0c1326; border: 1px solid #1f2a44; font-size: .8rem; color: var(--muted); }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .big { font-size: 2.2rem; font-weight: 800; letter-spacing: .2px;
+    background: linear-gradient(90deg, #93c5fd, #22d3ee, #a7f3d0); -webkit-background-clip: text; background-clip: text; color: transparent; margin: 0 0 6px; }
+  label { font-size: .9rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select, textarea, button {
+    width: 100%; border-radius: 12px; border: 1px solid #2a3657; padding: 10px 12px; background: #0e1529; color: var(--text); outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
+  button { background: linear-gradient(180deg, #1a90a6, #0f7688); font-weight: 600; cursor: pointer; border: none; }
+  button.secondary { background: #121a31; border: 1px solid #2a3657; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { border-bottom: 1px dashed #243152; padding: 8px 4px; text-align: left; }
   td.right { text-align: right; }
-  .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e6e6ea; padding: 10px var(--pad); display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; z-index: 20; }
-  .pill { background: #f3f3f6; border: 1px solid #e6e6ea; border-radius: 999px; padding: 8px 12px; font-weight: 600; font-size: 14px; display: inline-block; margin-right: 8px; }
-  .muted { color:#666; font-size:12px; }
-  .nowrow { display:flex; gap:10px; align-items:center; margin-top:6px; flex-wrap: wrap; }
-  .nowclock { font-variant-numeric: tabular-nums; }
-  .toolbar { display:flex; gap:10px; flex-wrap:wrap; }
-  .error { color:#b00020; font-size:13px; }
+  .hr { height: 1px; background: linear-gradient(90deg, #1f2a44, transparent); margin: 10px 0 6px; }
+  .small { font-size: .85rem; color: var(--muted); }
 </style>
 </head>
 <body>
 <header>
-  <h1>IOB Calculator</h1>
-  <div class="subtle">Mobile-friendly, auto-refresh baked in. Local storage; local time parsing. v4</div>
-  <div class="nowrow">
-    <div>Now:</div><div id="nowClock" class="nowclock">—</div>
-    <div class="toolbar">
-      <button id="refreshBtn" class="secondary" style="padding:6px 10px">Refresh</button>
-      <button id="resetBtn" class="secondary" style="padding:6px 10px">Reset Local Data</button>
+  <div class="container" style="grid-template-columns:1fr;">
+    <div class="row" style="gap:8px; align-items: baseline;">
+      <div style="flex:2">
+        <h1>Insulin On Board (IOB)</h1>
+        <div class="small">Local only. No server. Auto-saves to your browser.</div>
+      </div>
+      <div style="flex:1; text-align:right;">
+        <span class="pill" id="nowClock">—</span>
+        <span class="pill" id="tick">Auto-refresh: 30s</span>
+        <button id="refreshBtn" class="secondary" style="margin-left:8px; width:auto; padding:6px 10px;">Refresh now</button>
+      </div>
     </div>
   </div>
-  <div id="err" class="error"></div>
 </header>
 
-<main>
-  <section>
-    <h2 style="margin-top:0">Model & Calibration</h2>
-    <div class="row-3">
-      <div>
-        <label for="model">IOB Model</label>
-        <select id="model">
-          <option value="jade">Jade-fit (calibrated)</option>
-          <option value="smooth">Smoothstep (duration = Tail)</option>
-          <option value="walsh">Walsh 3h</option>
-        </select>
-        <div class="muted" id="modelNote" style="margin-top:6px;">Current model: <b>Jade-fit</b></div>
+<main class="container">
+  <!-- LEFT: IOB, Doses, Chart -->
+  <section class="card">
+    <div class="row" style="align-items: baseline;">
+      <div style="flex:2">
+        <div class="big" id="iobNow">0.00 U</div>
+        <div class="muted" id="lastUpdated">—</div>
       </div>
-      <div>
-        <label for="tail">Tail clamp (minutes)</label>
-        <input type="number" id="tail" inputmode="numeric" value="180" min="30" step="5">
-      </div>
-      <div>
-        <label for="calib">% Calibration (applies in Jade-fit)</label>
-        <input type="number" id="calib" inputmode="numeric" value="118" min="10" max="300">
+      <div style="flex:1; text-align:right;">
+        <div class="pill" id="modelPill">Model: Jade-fit</div>
+        <div class="pill" id="diaPill">DIA: 3h</div>
       </div>
     </div>
-  </section>
 
-  <section>
-    <h2 style="margin-top:0">Bolus Helper</h2>
-    <div class="row-4">
-      <div>
-        <label for="bg">Current BG (mg/dL)</label>
-        <input type="number" id="bg" inputmode="numeric">
-      </div>
-      <div>
-        <label for="target">Target BG</label>
-        <input type="number" id="target" inputmode="numeric" value="120">
-      </div>
-      <div>
-        <label for="carbs">Carbs (g)</label>
-        <input type="number" id="carbs" inputmode="numeric">
-      </div>
-      <div>
-        <label for="corrPct">Correction %</label>
-        <input type="number" id="corrPct" inputmode="numeric" value="100" min="0" max="200">
-      </div>
-    </div>
-    <div class="row-3" style="margin-top:10px;">
-      <div>
-        <label for="isf">ISF (mg/dL per 1u)</label>
-        <input type="number" id="isf" inputmode="numeric" value="50">
-      </div>
-      <div>
-        <label for="icr">ICR (g per 1u)</label>
-        <input type="number" id="icr" inputmode="numeric" value="25">
-      </div>
-      <div style="display:flex; align-items:flex-end;">
-        <button id="recalcBtn">Recalculate</button>
-      </div>
-    </div>
-    <div class="muted" style="margin-top:6px;">
-      Correction, Meal, and Suggested are <b>floored</b> to whole units. Correction is scaled by <b>Correction %</b> before flooring.
-    </div>
-  </section>
+    <div class="hr"></div>
 
-  <section>
-    <h2 style="margin-top:0">Add Dose</h2>
+    <h2 style="margin:6px 0 10px;">Add Dose</h2>
     <div class="row">
       <div>
-        <label for="doseUnits">Dose (units)</label>
-        <input type="number" id="doseUnits" inputmode="decimal" step="any" placeholder="e.g., 1.5">
+        <label>Units (U)</label>
+        <input id="doseUnits" type="number" step="0.1" min="0" placeholder="e.g., 1.5" />
       </div>
       <div>
-        <label for="doseTime">Time Given</label>
-        <input type="datetime-local" id="doseTime">
+        <label>Time</label>
+        <input id="doseTime" type="datetime-local" />
       </div>
     </div>
-    <div style="margin-top:var(--pad);" class="row">
+    <div class="row" style="margin-top:8px;">
       <button id="addDoseBtn">Add Dose</button>
-      <button id="addNowBtn" class="secondary">Add 1u now</button>
+      <button id="addNowBtn" class="secondary">Add 1U now</button>
+      <button id="clearAllBtn" class="secondary">Clear All</button>
     </div>
+
+    <div class="hr"></div>
+
+    <h2 style="margin:6px 0 10px;">Doses</h2>
+    <div style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th style="min-width:210px;">Time (editable)</th>
+            <th class="right">Units</th>
+            <th class="right">Min since</th>
+            <th class="right">IOB %</th>
+            <th class="right">IOB (u)</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="doseTable"></tbody>
+      </table>
+    </div>
+
+    <div class="hr"></div>
+
+    <h2 style="margin:6px 0 10px;">IOB Curve</h2>
+    <canvas id="iobChart" height="220"></canvas>
+    <div class="small" style="margin-top:6px;">Chart shows total IOB over the past 6h → now.</div>
   </section>
 
-  <section>
-    <h2 style="margin-top:0">Doses</h2>
-    <table id="doseTable">
-      <thead>
-        <tr>
-          <th>Units</th>
-          <th>Time given (local)</th>
-          <th class="right">Min since</th>
-          <th class="right">IOB %</th>
-          <th class="right">IOB (u)</th>
-          <th class="right">Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+  <!-- RIGHT: Settings + Helper -->
+  <aside class="card">
+    <h2 style="margin:6px 0 10px;">Settings</h2>
+    <div class="row">
+      <div>
+        <label>Model</label>
+        <select id="modelSelect">
+          <option value="jade">Jade-fit</option>
+          <option value="smooth">Smoothstep</option>
+          <option value="linear">Linear</option>
+          <option value="exp">Exponential</option>
+        </select>
+      </div>
+      <div>
+        <label>DIA (hours)</label>
+        <input id="diaHours" type="number" step="0.5" min="2" max="8" />
+      </div>
+    </div>
+
+    <div class="hr"></div>
+
+    <h2 style="margin:6px 0 10px;">Bolus Helper (Legacy rounding)</h2>
+    <div class="row">
+      <div>
+        <label>Current BG (mg/dL)</label>
+        <input id="bgNow" type="number" step="1" min="0" placeholder="e.g., 180" />
+      </div>
+      <div>
+        <label>Target BG (mg/dL)</label>
+        <input id="bgTarget" type="number" step="1" min="0" placeholder="e.g., 110" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>ISF (mg/dL per 1U)</label>
+        <input id="isf" type="number" step="1" min="1" placeholder="e.g., 45" />
+      </div>
+      <div>
+        <label>Carbs (g)</label>
+        <input id="carbs" type="number" step="1" min="0" placeholder="e.g., 60" />
+      </div>
+      <div>
+        <label>ICR (g per 1U)</label>
+        <input id="icr" type="number" step="0.1" min="1" placeholder="e.g., 10" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>Correction (floored)</label>
+        <input id="corrOut" type="text" disabled />
+      </div>
+      <div>
+        <label>Meal (floored)</label>
+        <input id="mealOut" type="text" disabled />
+      </div>
+      <div>
+        <label>Suggested (floored, clamped ≥ 0)</label>
+        <input id="suggOut" type="text" disabled />
+      </div>
+    </div>
+
+    <div class="small" style="margin-top:6px;">Suggested = floor(corr + meal − totalIOB), clamped to ≥ 0. No calibration, no correction scaling.</div>
+    <div class="small" style="margin-top:4px;">This is math, not medical advice. Sanity-check before dosing.</div>
+  </aside>
 </main>
 
-<div class="footer">
-  <div>
-    <span class="pill">Model: <span id="modelBadge">Jade-fit</span></span>
-    <span class="pill">Raw IOB: <span id="rawIOB">0.00</span> u</span>
-    <span class="pill">Calibrated IOB: <span id="totalIOB">0.00</span> u</span>
-    <span class="pill">Correction: <span id="corrDose">0</span> u</span>
-    <span class="pill">Meal: <span id="mealDose">0</span> u</span>
-    <span class="pill">Suggested: <span id="totalDose">0</span> u</span>
-  </div>
-  <button id="saveBtn" class="secondary">Save</button>
-</div>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 <script>
-'use strict';
 (function(){
-  // ===== Utilities =====
-  const LS_DOSES = 'iob_doses_unified_v4';
-  const LS_CFG   = 'iob_cfg_unified_v4';
+  // ===== Persistence =====
+  const KEY = 'iob_app_jade_smooth_v1';
+  const DEFAULTS = { model:'jade', diaHours:3, doses:[] };
 
-  const $ = (sel) => document.querySelector(sel);
-  const errEl = $('#err');
-  function setErr(msg){ errEl.textContent = msg || ''; }
-  function fmt2(x){ return (Math.round(x * 100) / 100).toFixed(2); }
-  function parseNum(input){
-    if (input == null) return NaN;
-    const s = String(input).trim().replace(',', '.');
-    return Number(s);
-  }
-  function safeGetJSON(key, fallback){
+  function loadState() {
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      const v = JSON.parse(raw);
-      return (v == null ? fallback : v);
-    } catch { return fallback; }
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return {...DEFAULTS};
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULTS, ...parsed, doses: Array.isArray(parsed.doses) ? parsed.doses : [] };
+    } catch { return {...DEFAULTS}; }
   }
-  function parseLocalDatetime(val){
-    // Expects "YYYY-MM-DDTHH:MM"
-    if (!val || typeof val !== 'string' || !val.includes('T')) return null;
-    const [date, time] = val.split('T');
-    const [y,m,d] = date.split('-').map(n => parseInt(n,10));
-    const [hh,mm]  = time.split(':').map(n => parseInt(n,10));
-    if ([y,m,d,hh,mm].some(x => Number.isNaN(x))) return null;
-    return new Date(y, m-1, d, hh, mm, 0, 0); // local time
-  }
-  function toDatetimeLocalValue(ms){
-    const dt = new Date(ms);
-    const pad = n => String(n).padStart(2,'0');
-    return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-  }
-  function toReadable(ms){ return new Date(ms).toLocaleString(); }
+  function saveState(s){ localStorage.setItem(KEY, JSON.stringify(s)); }
 
-  // ===== IOB Models =====
-  function iobPctSmooth(mins, tail){
-    const t = Math.min(Math.max(mins, 0), Math.max(1, tail));
-    const x = t / Math.max(1, tail);
-    const p = 1 - 3*x*x + 2*x*x*x; // smoothstep(1 - x)
-    return Math.max(0, Math.min(1, p));
+  let state = loadState();
+
+  // ===== Helpers =====
+  const now = () => new Date();
+  const pad2 = n => String(n).padStart(2,'0');
+  function toLocalInputValue(d) {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}T${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
   }
-  function iobPctWalsh(mins, tail){
-    const t = Math.min(Math.max(mins, 0), tail);
-    const p = 1 - 0.001852*t*t + 0.00002352*t*t*t - 0.0000001032*t*t*t*t;
-    return Math.max(0, Math.min(1, p));
+  function parseLocalDatetime(v){
+    if (!v || typeof v !== 'string') return null;
+    const [date,time] = v.split('T'); if(!time) return null;
+    const [y,m,d] = date.split('-').map(n=>parseInt(n,10));
+    const [hh,mm] = time.split(':').map(n=>parseInt(n,10));
+    if ([y,m,d,hh,mm].some(Number.isNaN)) return null;
+    return new Date(y, m-1, d, hh, mm, 0, 0);
   }
-  function iobPctJade(mins, tail){
+  const minutesBetween = (tLater, tEarlier) => (new Date(tLater) - new Date(tEarlier)) / 60000;
+  const clamp01 = x => Math.max(0, Math.min(1, x));
+  const fmt2 = x => (Math.round(x*100)/100).toFixed(2);
+
+  // ===== IOB Models (fractions) =====
+  // Smoothstep: generic across DIA; y = 1 - 3x^2 + 2x^3 for x in [0,1]
+  function iobFracSmooth(mins, diaHours){
+    const dur = diaHours * 60;
+    const t = Math.min(Math.max(mins, 0), dur);
+    const x = clamp01(t / dur);
+    return Math.max(0, 1 - 3*x*x + 2*x*x*x);
+  }
+
+  // Exponential (optional, truncated at DIA)
+  function iobFracExp(mins, diaHours){
+    const dur = diaHours * 60;
+    if (mins <= 0) return 1;
+    if (mins >= dur) return 0;
+    const halfLifeMin = (diaHours * 60) / 3;
+    const k = Math.log(2) / halfLifeMin;
+    const rem = Math.exp(-k * mins);
+    // Soft taper in last 10% of DIA
+    const taperStart = dur * 0.9;
+    if (mins > taperStart) {
+      const w = (dur - mins) / (dur - taperStart);
+      return Math.max(0, rem * Math.max(0, w));
+    }
+    return rem;
+  }
+
+  // Linear (optional, truncated at DIA)
+  function iobFracLinear(mins, diaHours){
+    const dur = diaHours * 60;
+    const t = Math.min(Math.max(mins,0), dur);
+    return Math.max(0, 1 - t/dur);
+  }
+
+  // Jade-fit approximation (gamma-like survival) with erf approximation; truncated at DIA
+  function iobFracJade(mins, diaHours){
+    const tail = Math.max(0, diaHours * 60);
     const t = Math.min(Math.max(mins, 0), tail);
-    const theta = 56.6773;
+    const k = 1.5, theta = 56.6773;            // from your last working build
     const x = t / theta;
-    const sqrtx = Math.sqrt(Math.max(0, x));
-    function erfApprox(z){
+    const sqrtx = Math.sqrt(x);
+    const erfApprox = (z)=>{
       const sign = z < 0 ? -1 : 1;
-      const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+      const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
       const tt=1/(1+p*Math.abs(z));
       const y=1-((((a5*tt+a4)*tt+a3)*tt+a2)*tt+a1)*tt*Math.exp(-z*z);
       return sign*y;
+    };
+    // Survival-like shape (bounded, monotone decreasing)
+    const cdf_like = (erfApprox(sqrtx) * Math.sqrt(x) * Math.exp(-x)) || 0;
+    const S = Math.max(0, Math.min(1, 1 - cdf_like));
+    return S;
+  }
+
+  function iobFracForDose(minsSince, model, diaHours){
+    switch(model){
+      case 'jade':   return iobFracJade(minsSince, diaHours);
+      case 'smooth': return iobFracSmooth(minsSince, diaHours);
+      case 'exp':    return iobFracExp(minsSince, diaHours);
+      case 'linear': return iobFracLinear(minsSince, diaHours);
+      default:       return iobFracJade(minsSince, diaHours);
     }
-    const c
+  }
+
+  function iobUnitsForDose(units, minsSince, model, diaHours){
+    return units * iobFracForDose(minsSince, model, diaHours);
+  }
+
+  function totalIOB(atTime, model, diaHours, doses){
+    return doses.reduce((sum, d)=> {
+      const mins = minutesBetween(atTime, d.timeISO);
+      return sum + iobUnitsForDose(d.units, mins, model, diaHours);
+    }, 0);
+  }
+
+  // ===== Elements =====
+  const doseTableBody = document.querySelector('#doseTable');
+  const iobNowEl = document.getElementById('iobNow');
+  const lastUpdatedEl = document.getElementById('lastUpdated');
+  const modelSelect = document.getElementById('modelSelect');
+  const diaHoursEl = document.getElementById('diaHours');
+  const modelPill = document.getElementById('modelPill');
+  const diaPill = document.getElementById('diaPill');
+  const nowClockEl = document.getElementById('nowClock');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const tickEl = document.getElementById('tick');
+
+  const doseUnitsEl = document.getElementById('doseUnits');
+  const doseTimeEl = document.getElementById('doseTime');
+  const addDoseBtn = document.getElementById('addDoseBtn');
+  const addNowBtn = document.getElementById('addNowBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+
+  const bgNowEl = document.getElementById('bgNow');
+  const bgTargetEl = document.getElementById('bgTarget');
+  const isfEl = document.getElementById('isf');
+  const carbsEl = document.getElementById('carbs');
+  const icrEl = document.getElementById('icr');
+  const corrOutEl = document.getElementById('corrOut');
+  const mealOutEl = document.getElementById('mealOut');
+  const suggOutEl = document.getElementById('suggOut');
+
+  const chartCtx = document.getElementById('iobChart').getContext('2d');
+  let chart;
+
+  // ===== UI Init =====
+  function initControls(){
+    modelSelect.value = state.model;
+    diaHoursEl.value = state.diaHours;
+    doseTimeEl.value = toLocalInputValue(now());
+    updatePills();
+  }
+  function updatePills(){
+    const names = { jade:'Jade-fit', smooth:'Smoothstep', linear:'Linear', exp:'Exponential' };
+    modelPill.textContent = `Model: ${names[modelSelect.value] || modelSelect.value}`;
+    diaPill.textContent = `DIA: ${Number(diaHoursEl.value).toFixed(1)}h`;
+  }
+
+  // ===== Doses Table =====
+  function renderDoses(){
+    doseTableBody.innerHTML = '';
+    const dosesSorted = [...state.doses].sort((a,b) => new Date(b.timeISO) - new Date(a.timeISO));
+    for (let i=0; i<dosesSorted.length; i++){
+      const d = dosesSorted[i];
+      const mins = minutesBetween(now(), d.timeISO);
+      const frac = iobFracForDose(mins, state.model, state.diaHours);
+      const iobu = d.units * frac;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <input type="datetime-local" value="${toLocalInputValue(d.timeISO)}" data-edit="${d.id}" />
+        </td>
+        <td class="right">${d.units.toFixed(2)}</td>
+        <td class="right">${Math.max(0, Math.floor(mins)).toString()}</td>
+        <td class="right">${(frac*100).toFixed(0)}%</td>
+        <td class="right">${iobu.toFixed(2)}</td>
+        <td><button class="secondary" data-del="${d.id}">Delete</button></td>
+      `;
+      // wire edit + delete
+      tr.querySelector('[data-edit]').addEventListener('change', (e)=>{
+        const val = e.target.value;
+        const parsed = parseLocalDatetime(val);
+        if (!parsed) return;
+        const idx = state.doses.findIndex(x => x.id === d.id);
+        if (idx >= 0){
+          state.doses[idx].timeISO = parsed.toISOString();
+          saveState(state);
+          renderAll();
+        }
+      });
+      tr.querySelector('[data-del]').addEventListener('click', ()=>{
+        state.doses = state.doses.filter(x => x.id !== d.id);
+        saveState(state);
+        renderAll();
+      });
+      doseTableBody.appendChild(tr);
+    }
+  }
+
+  // ===== Top Summary + Chart =====
+  function renderTop(){
+    const total = totalIOB(now(), state.model, state.diaHours, state.doses);
+    iobNowEl.textContent = `${fmt2(total)} U`;
+    lastUpdatedEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    updatePills();
+
+    // Legacy rounding + clamp for suggested
+    const bg = Number(bgNowEl.value);
+    const target = Number(bgTargetEl.value);
+    const isf = Number(isfEl.value);
+    const carbs = Number(carbsEl.value);
+    const icr = Number(icrEl.value);
+
+    let corr = 0, meal = 0;
+    if (!Number.isNaN(bg) && !Number.isNaN(target) && !Number.isNaN(isf) && isf > 0) {
+      corr = Math.max(0, (bg - target) / isf);
+    }
+    if (!Number.isNaN(carbs) && !Number.isNaN(icr) && icr > 0) {
+      meal = Math.max(0, carbs / icr);
+    }
+    const corrWhole = Math.max(0, Math.floor(corr));
+    const mealWhole = Math.max(0, Math.floor(meal));
+    const suggestedWhole = Math.max(0, Math.floor(corr + meal - total));
+
+    corrOutEl.value = `${corrWhole} U`;
+    mealOutEl.value = `${mealWhole} U`;
+    suggOutEl.value = `${suggestedWhole} U`;
+  }
+
+  function renderChart(){
+    const end = now();
+    const earliestDose = state.doses.length ? new Date(Math.min(...state.doses.map(d => +new Date(d.timeISO)))) : end;
+    const start = new Date(Math.min(end - 6*3600e3, +earliestDose));
+    const points = [];
+    for (let i=0; i<=60; i++){
+      const t = new Date(start.getTime() + i * (end - start)/60);
+      const y = totalIOB(t, state.model, state.diaHours, state.doses);
+      points.push({ x: t, y });
+    }
+    const labels = points.map(p => p.x);
+    const data = points.map(p => p.y);
+    if (chart){
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data;
+      chart.update();
+    } else {
+      chart = new Chart(chartCtx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'IOB', data, tension: 0.25, fill: false }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+            y: { beginAtZero: true, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
+          },
+          plugins: { legend: { labels: { color: '#e5e7eb' } } }
+        }
+      });
+    }
+  }
+
+  function renderAll(){
+    renderDoses();
+    renderTop();
+    renderChart();
+  }
+
+  // ===== Add/Clear =====
+  function addDose(){
+    const units = Number(doseUnitsEl.value);
+    const tVal = doseTimeEl.value;
+    if (!units || !tVal) return;
+    const d = { id: crypto.randomUUID(), units, timeISO: new Date(tVal).toISOString() };
+    state.doses.push(d);
+    saveState(state);
+    doseUnitsEl.value = '';
+    doseTimeEl.value = toLocalInputValue(now());
+    renderAll();
+  }
+  function addNow1U(){
+    state.doses.push({ id: crypto.randomUUID(), units: 1, timeISO: new Date().toISOString() });
+    saveState(state);
+    renderAll();
+  }
+  function clearAll(){
+    if (!confirm('Delete all doses? This cannot be undone.')) return;
+    state.doses = [];
+    saveState(state);
+    renderAll();
+  }
+
+  // ===== Clock & Refresh =====
+  function tickClock(){
+    const dt = new Date();
+    nowClockEl.textContent = dt.toLocaleString();
+  }
+
+  // ===== Wiring =====
+  addDoseBtn.addEventListener('click', addDose);
+  addNowBtn.addEventListener('click', addNow1U);
+  clearAllBtn.addEventListener('click', clearAll);
+  refreshBtn.addEventListener('click', renderAll);
+
+  modelSelect.addEventListener('change', ()=>{ state.model = modelSelect.value; saveState(state); renderAll(); });
+  diaHoursEl.addEventListener('input', ()=>{
+    const v = Number(diaHoursEl.value);
+    state.diaHours = Math.min(8, Math.max(2, v || DEFAULTS.diaHours));
+    saveState(state); renderAll();
+  });
+  [bgNowEl, bgTargetEl, isfEl, carbsEl, icrEl].forEach(el => el.addEventListener('input', renderTop));
+
+  // Auto-refresh
+  let countdown = 30;
+  setInterval(()=>{ countdown = (countdown<=1?30:countdown-1); tickEl.textContent = `Auto-refresh: ${countdown}s`; }, 1000);
+  setInterval(()=>{ renderAll(); }, 30000);
+  setInterval(()=>{ tickClock(); }, 1000);
+
+  // ===== Boot =====
+  document.getElementById('doseTime').value = toLocalInputValue(now());
+  initControls();
+  renderAll();
+})();
+</script>
+</body>
+</html>
