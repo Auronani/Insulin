@@ -1,0 +1,407 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IOB Calculator</title>
+<style>
+  :root { --pad: 14px; --radius: 14px; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; color: #111; background: #f7f7f8; }
+  header { position: sticky; top: 0; background: white; padding: var(--pad); border-bottom: 1px solid #e6e6ea; z-index: 10; }
+  h1 { font-size: 20px; margin: 0 0 4px 0; }
+  .subtle { color: #666; font-size: 13px; }
+  main { padding: var(--pad); padding-bottom: 120px; max-width: 780px; margin: 0 auto; }
+  section { background: white; border: 1px solid #e6e6ea; border-radius: var(--radius); padding: var(--pad); margin-bottom: var(--pad); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); }
+  label { font-size: 13px; color: #333; display: block; margin-bottom: 6px; }
+  input, select, button { width: 100%; box-sizing: border-box; padding: 12px 12px; border-radius: 12px; border: 1px solid #d9d9df; font-size: 16px; background: #fff; }
+  input[type="datetime-local"] { font-size: 15px; }
+  button { background: #111; color: white; border: none; }
+  button.secondary { background: #f0f0f3; color: #333; border: 1px solid #d9d9df; }
+  .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e6e6ea; padding: 10px var(--pad); display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; z-index: 20; }
+  .totals { display: flex; gap: 18px; flex-wrap: wrap; }
+  .totals .pill { background: #f3f3f6; border: 1px solid #e6e6ea; border-radius: 999px; padding: 8px 12px; font-weight: 600; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+  th { color: #666; font-weight: 600; }
+  td.actions { text-align: right; }
+  .right { text-align: right; }
+  .small { font-size: 12px; color: #666; }
+  .chart-wrap { height: 180px; }
+  canvas { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IOB Calculator</h1>
+  <div class="subtle">Walsh 3-hour model (soft tail to 200 min). Works offline. Save to Home Screen.</div>
+</header>
+
+<main>
+  <section>
+    <h2 style="margin-top:0">Settings</h2>
+    <div class="row">
+      <div>
+        <label for="target">Target BG (mg/dL)</label>
+        <input type="number" id="target" inputmode="numeric" value="120">
+      </div>
+      <div>
+        <label for="isf">ISF (mg/dL per 1u)</label>
+        <input type="number" id="isf" inputmode="numeric" value="50">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="icr">ICR (g carbs per 1u)</label>
+        <input type="number" id="icr" inputmode="numeric" value="25">
+      </div>
+      <div>
+        <label for="tail">Tail clamp (minutes)</label>
+        <input type="number" id="tail" inputmode="numeric" value="200">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-top:0">Current Values</h2>
+    <div class="row">
+      <div>
+        <label for="bg">Current BG (mg/dL)</label>
+        <input type="number" id="bg" inputmode="numeric" placeholder="e.g., 333">
+      </div>
+      <div>
+        <label for="carbs">Carbs (g) — optional</label>
+        <input type="number" id="carbs" inputmode="numeric" placeholder="e.g., 45">
+      </div>
+    </div>
+    <div style="margin-top:var(--pad);" class="row">
+      <button id="recalcBtn">Recalculate</button>
+      <button id="clearAllBtn" class="secondary">Clear all doses</button>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-top:0">Add Dose</h2>
+    <div class="row">
+      <div>
+        <label for="doseUnits">Dose (units)</label>
+        <input type="number" id="doseUnits" inputmode="decimal" step="0.1" placeholder="e.g., 1.5">
+      </div>
+      <div>
+        <label for="doseTime">Time Given</label>
+        <input type="datetime-local" id="doseTime">
+      </div>
+    </div>
+    <div style="margin-top:var(--pad);" class="row">
+      <button id="addDoseBtn">Add Dose</button>
+      <button id="addNowBtn" class="secondary">Add 1u now</button>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-top:0">Projected IOB (next 60 min)</h2>
+    <div class="small">Quick peek at how your current IOB will fade over the next hour.</div>
+    <div class="chart-wrap">
+      <canvas id="iobChart" width="800" height="180" aria-label="Projected IOB line chart"></canvas>
+    </div>
+  </section>
+
+  <section>
+    <h2 style="margin-top:0">Doses</h2>
+    <div class="small" id="tzInfo"></div>
+    <table id="doseTable">
+      <thead>
+        <tr>
+          <th>Units</th>
+          <th>Time</th>
+          <th class="right">Min since</th>
+          <th class="right">IOB %</th>
+          <th class="right">IOB (u)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<div class="footer">
+  <div class="totals">
+    <div class="pill">Total IOB: <span id="totalIOB">0.00</span> u</div>
+    <div class="pill">Correction: <span id="corrDose">0.00</span> u</div>
+    <div class="pill">Meal: <span id="mealDose">0.00</span> u</div>
+    <div class="pill">Suggested: <span id="totalDose">0.00</span> u</div>
+  </div>
+  <button id="saveBtn" class="secondary">Save</button>
+</div>
+
+<script>
+(function(){
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+  document.getElementById('tzInfo').textContent = "Times shown in: " + tz;
+
+  // Local storage keys
+  const LS_KEY = 'iob_app_doses_v2';
+  const LS_CFG = 'iob_app_config_v2';
+
+  // Elements
+  const doseUnitsEl = document.getElementById('doseUnits');
+  const doseTimeEl = document.getElementById('doseTime');
+  const addDoseBtn = document.getElementById('addDoseBtn');
+  const addNowBtn  = document.getElementById('addNowBtn');
+  const doseTableBody = document.querySelector('#doseTable tbody');
+  const totalIOBEl = document.getElementById('totalIOB');
+  const corrDoseEl = document.getElementById('corrDose');
+  const mealDoseEl = document.getElementById('mealDose');
+  const totalDoseEl = document.getElementById('totalDose');
+  const recalcBtn = document.getElementById('recalcBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const targetEl = document.getElementById('target');
+  const isfEl = document.getElementById('isf');
+  const icrEl = document.getElementById('icr');
+  const tailEl = document.getElementById('tail');
+  const bgEl = document.getElementById('bg');
+  const carbsEl = document.getElementById('carbs');
+  const chartCanvas = document.getElementById('iobChart');
+  const ctx = chartCanvas.getContext('2d');
+
+  // State
+  let doses = [];
+  let config = { target: 120, isf: 50, icr: 25, tail: 200 };
+
+  // Load saved
+  try { const saved = JSON.parse(localStorage.getItem(LS_KEY) || '[]'); if (Array.isArray(saved)) doses = saved; } catch (_) {}
+  try { const cfg = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); config = Object.assign(config, cfg); } catch (_) {}
+
+  // Apply saved config to inputs
+  targetEl.value = config.target;
+  isfEl.value = config.isf;
+  icrEl.value = config.icr;
+  tailEl.value = config.tail;
+
+  // Helpers
+  function fmt2(x){ return (Math.round(x * 100) / 100).toFixed(2); }
+  function minutesSince(ms){ const now = Date.now(); return (now - ms) / 60000; }
+  function iobPercentAtMinutes(tMin, tailClamp){
+    const t = Math.min(Math.max(tMin, 0), tailClamp);
+    const p = 1
+      - 0.001852 * Math.pow(t,2)
+      + 0.00002352 * Math.pow(t,3)
+      - 0.0000001032 * Math.pow(t,4);
+    return Math.max(0, p);
+  }
+
+  function computeTotalIOBAtOffset(minsOffset){
+    // total IOB at current time + minsOffset (can be 0..60 for projection)
+    const futureNow = Date.now() + minsOffset*60000;
+    let total = 0;
+    for (const d of doses){
+      const mins = (futureNow - d.timeMs) / 60000;
+      const pct = iobPercentAtMinutes(mins, Number(tailEl.value) || 200);
+      total += d.units * pct;
+    }
+    return total;
+  }
+
+  function drawChart(){
+    const W = chartCanvas.width;
+    const H = chartCanvas.height;
+    // Clear
+    ctx.clearRect(0,0,W,H);
+
+    // Build data: next 60 minutes, step 5
+    const xs = []; const ys = [];
+    let maxY = 0;
+    for (let m=0; m<=60; m+=5){
+      const y = computeTotalIOBAtOffset(m);
+      xs.push(m); ys.push(y);
+      if (y > maxY) maxY = y;
+    }
+    maxY = Math.max(maxY, 1); // ensure non-zero scale
+
+    // Chart padding
+    const padL = 36, padR = 8, padT = 10, padB = 22;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    // Axes
+    ctx.strokeStyle = '#cfcfd4';
+    ctx.lineWidth = 1;
+    // x-axis
+    ctx.beginPath();
+    ctx.moveTo(padL, H - padB);
+    ctx.lineTo(W - padR, H - padB);
+    ctx.stroke();
+    // y-axis
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, H - padB);
+    ctx.stroke();
+
+    // Y ticks (0, 25%, 50%, 75%, 100% of maxY)
+    ctx.fillStyle = '#666';
+    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    for (let i=0;i<=4;i++){
+      const v = (maxY * i / 4);
+      const y = H - padB - (v / maxY) * plotH;
+      ctx.fillText(v.toFixed(1), 4, y + 4);
+      ctx.strokeStyle = '#eeeeee';
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    }
+
+    // X ticks every 15 min
+    ctx.fillStyle = '#666';
+    for (let m=0; m<=60; m+=15){
+      const x = padL + (m / 60) * plotW;
+      ctx.fillText(m.toString(), x - 6, H - 4);
+      ctx.strokeStyle = '#eeeeee';
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+    }
+
+    // Plot line
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ys.forEach((yVal, i) => {
+      const x = padL + (xs[i] / 60) * plotW;
+      const y = H - padB - (yVal / maxY) * plotH;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Fill under line (subtle)
+    ctx.fillStyle = 'rgba(17,17,17,0.08)';
+    ctx.lineTo(padL + plotW, H - padB);
+    ctx.lineTo(padL, H - padB);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function recalc(){
+    // Update config from inputs
+    const cfg = {
+      target: Number(targetEl.value) || 120,
+      isf: Number(isfEl.value) || 50,
+      icr: Number(icrEl.value) || 25,
+      tail: Math.max(0, Number(tailEl.value) || 200),
+    };
+    Object.assign(config, cfg);
+
+    // Sort doses by time desc
+    doses.sort((a,b) => b.timeMs - a.timeMs);
+
+    // Rebuild table
+    doseTableBody.innerHTML = "";
+    let totalIOB = 0;
+    for (const [idx, d] of doses.entries()){
+      const mins = minutesSince(d.timeMs);
+      const pct = iobPercentAtMinutes(mins, config.tail);
+      const iobUnits = d.units * pct;
+      totalIOB += iobUnits;
+
+      const tr = document.createElement('tr');
+      const tdUnits = document.createElement('td');
+      const tdTime = document.createElement('td');
+      const tdMin  = document.createElement('td');
+      const tdPct  = document.createElement('td');
+      const tdIOB  = document.createElement('td');
+      const tdAct  = document.createElement('td');
+
+      tdUnits.textContent = fmt2(d.units);
+      tdTime.textContent = new Date(d.timeMs).toLocaleString();
+      tdMin.textContent  = Math.max(0, Math.floor(mins)).toString();
+      tdPct.textContent  = (fmt2(pct * 100)) + "%";
+      tdIOB.textContent  = fmt2(iobUnits);
+      tdMin.className = 'right'; tdPct.className = 'right'; tdIOB.className = 'right';
+      tdAct.className = 'actions';
+
+      const delBtn = document.createElement('button');
+      delBtn.textContent = "Delete";
+      delBtn.className = "secondary";
+      delBtn.onclick = () => { doses.splice(idx,1); recalc(); };
+      tdAct.appendChild(delBtn);
+
+      tr.appendChild(tdUnits); tr.appendChild(tdTime); tr.appendChild(tdMin);
+      tr.appendChild(tdPct); tr.appendChild(tdIOB); tr.appendChild(tdAct);
+      doseTableBody.appendChild(tr);
+    }
+
+    // Totals
+    totalIOBEl.textContent = fmt2(totalIOB);
+
+    // Correction dose
+    const bg = Number(bgEl.value);
+    let corr = 0;
+    if (!isNaN(bg)){
+      const raw = (bg - config.target) / config.isf;
+      corr = Math.max(0, raw - totalIOB);
+    }
+    corrDoseEl.textContent = fmt2(corr);
+
+    // Meal dose
+    const carbs = Number(carbsEl.value);
+    let meal = 0;
+    if (!isNaN(carbs) && carbs > 0){ meal = carbs / config.icr; }
+    mealDoseEl.textContent = fmt2(meal);
+
+    // Suggested
+    totalDoseEl.textContent = fmt2(corr + meal);
+
+    // Redraw chart last
+    drawChart();
+  }
+
+  function addDose(units, isoString){
+    const u = Number(units);
+    if (isNaN(u) || u <= 0) { alert("Enter dose units > 0"); return; }
+    let ms;
+    if (isoString && isoString.length){
+      const dt = new Date(isoString);
+      if (isNaN(dt.getTime())) { alert("Invalid time"); return; }
+      ms = dt.getTime();
+    } else {
+      ms = Date.now();
+    }
+    doses.push({ units: u, timeMs: ms });
+    recalc();
+  }
+
+  // Wire up
+  addDoseBtn.addEventListener('click', () => {
+    addDose(doseUnitsEl.value, doseTimeEl.value);
+    doseUnitsEl.value = ""; doseTimeEl.value = "";
+  });
+  addNowBtn.addEventListener('click', () => { addDose(1, ""); });
+  recalcBtn.addEventListener('click', recalc);
+  clearAllBtn.addEventListener('click', () => {
+    if (confirm("Clear all doses?")) { doses = []; recalc(); }
+  });
+  saveBtn.addEventListener('click', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify(doses));
+    localStorage.setItem(LS_CFG, JSON.stringify(config));
+    alert("Saved locally on this device.");
+  });
+  [targetEl, isfEl, icrEl, tailEl, bgEl, carbsEl].forEach(el => el.addEventListener('input', recalc));
+
+  // Initialize & periodic refresh
+  recalc();
+  setInterval(recalc, 30000);
+
+  // Resize handling for crisp canvas on DPR
+  function resizeCanvas(){
+    const ratio = window.devicePixelRatio || 1;
+    const bounds = chartCanvas.getBoundingClientRect();
+    chartCanvas.width = Math.floor(bounds.width * ratio);
+    chartCanvas.height = Math.floor(bounds.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawChart();
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+})();
+</script>
+</body>
+</html>
