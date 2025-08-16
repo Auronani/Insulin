@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>IOB App — Jade + Smoothstep, Legacy Rounding</title>
+<title>IOB App — Jade + Smoothstep, No Chart</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
   :root {
@@ -11,13 +11,15 @@
     --accent: #22d3ee; --shadow: 0 10px 25px rgba(0,0,0,.25); --radius: 18px; --gap: 14px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background: radial-gradient(1200px 800px at 10% 0%, #0b1226 10%, var(--bg) 60%); color: var(--text); }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+    background: radial-gradient(1200px 800px at 10% 0%, #0b1226 10%, var(--bg) 60%); color: var(--text); }
   header { position: sticky; top: 0; z-index: 10; padding: 16px; border-bottom: 1px solid #1f2a44;
     background: linear-gradient(180deg, rgba(15,23,42,0.9), rgba(15,23,42,0.5), rgba(15,23,42,0)); backdrop-filter: blur(8px); }
   h1 { margin: 0 0 4px; font-size: 1.1rem; }
   .container { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: var(--gap); grid-template-columns: 1fr; }
   @media (min-width: 900px){ .container{ grid-template-columns: 1.15fr .85fr; align-items: start; } }
-  .card { background: linear-gradient(180deg, #1b2437, #111827); border: 1px solid #1f2a44; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;}
+  .card { background: linear-gradient(180deg, #1b2437, #111827); border: 1px solid #1f2a44;
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;}
   .row { display: flex; gap: 10px; align-items: center; }
   .row > * { flex: 1; }
   .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #0c1326; border: 1px solid #1f2a44; font-size: .8rem; color: var(--muted); }
@@ -36,6 +38,9 @@
   td.right { text-align: right; }
   .hr { height: 1px; background: linear-gradient(90deg, #1f2a44, transparent); margin: 10px 0 6px; }
   .small { font-size: .85rem; color: var(--muted); }
+  .trend { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+  .trend-preview { margin-top:4px; line-height:1.35; }
+  .good { color:#a7f3d0; } .warn { color:#fde68a; } .bad { color:#fecaca; }
 </style>
 </head>
 <body>
@@ -56,7 +61,7 @@
 </header>
 
 <main class="container">
-  <!-- LEFT: IOB, Doses, Chart -->
+  <!-- LEFT: IOB, Doses, Trend -->
   <section class="card">
     <div class="row" style="align-items: baseline;">
       <div style="flex:2">
@@ -109,9 +114,13 @@
 
     <div class="hr"></div>
 
-    <h2 style="margin:6px 0 10px;">IOB Curve</h2>
-    <canvas id="iobChart" height="220"></canvas>
-    <div class="small" style="margin-top:6px;">Chart shows total IOB over the past 6h → now.</div>
+    <h2 style="margin:6px 0 10px;">IOB Trend</h2>
+    <div class="trend">
+      <span class="pill" id="delta30">Δ30m: —</span>
+      <span class="pill" id="delta60">Δ60m: —</span>
+    </div>
+    <div class="trend-preview small" id="trendPreview">Now: — | +15m: — | +30m: — | +45m: — | +60m: —</div>
+    <div class="small" style="margin-top:6px;">Text-only trend preview. No charts, no noise.</div>
   </section>
 
   <!-- RIGHT: Settings + Helper -->
@@ -177,16 +186,14 @@
     </div>
 
     <div class="small" style="margin-top:6px;">Suggested = floor(corr + meal − totalIOB), clamped to ≥ 0. No calibration, no correction scaling.</div>
-    <div class="small" style="margin-top:4px;">This is math, not medical advice. Sanity-check before dosing.</div>
+    <div class="small" style="margin-top:4px;">Math tool only. Sanity-check before dosing.</div>
   </aside>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 <script>
 (function(){
   // ===== Persistence =====
-  const KEY = 'iob_app_jade_smooth_v1';
+  const KEY = 'iob_app_jade_smooth_nochart_v1';
   const DEFAULTS = { model:'jade', diaHours:3, doses:[] };
 
   function loadState() {
@@ -221,7 +228,7 @@
   const fmt2 = x => (Math.round(x*100)/100).toFixed(2);
 
   // ===== IOB Models (fractions) =====
-  // Smoothstep: generic across DIA; y = 1 - 3x^2 + 2x^3 for x in [0,1]
+  // Smoothstep: y = 1 - 3x^2 + 2x^3, x ∈ [0,1]
   function iobFracSmooth(mins, diaHours){
     const dur = diaHours * 60;
     const t = Math.min(Math.max(mins, 0), dur);
@@ -229,7 +236,7 @@
     return Math.max(0, 1 - 3*x*x + 2*x*x*x);
   }
 
-  // Exponential (optional, truncated at DIA)
+  // Exponential (truncated at DIA)
   function iobFracExp(mins, diaHours){
     const dur = diaHours * 60;
     if (mins <= 0) return 1;
@@ -246,7 +253,7 @@
     return rem;
   }
 
-  // Linear (optional, truncated at DIA)
+  // Linear (truncated at DIA)
   function iobFracLinear(mins, diaHours){
     const dur = diaHours * 60;
     const t = Math.min(Math.max(mins,0), dur);
@@ -257,7 +264,7 @@
   function iobFracJade(mins, diaHours){
     const tail = Math.max(0, diaHours * 60);
     const t = Math.min(Math.max(mins, 0), tail);
-    const k = 1.5, theta = 56.6773;            // from your last working build
+    const k = 1.5, theta = 56.6773; // shape-ish constants from your working build vibe
     const x = t / theta;
     const sqrtx = Math.sqrt(x);
     const erfApprox = (z)=>{
@@ -267,7 +274,6 @@
       const y=1-((((a5*tt+a4)*tt+a3)*tt+a2)*tt+a1)*tt*Math.exp(-z*z);
       return sign*y;
     };
-    // Survival-like shape (bounded, monotone decreasing)
     const cdf_like = (erfApprox(sqrtx) * Math.sqrt(x) * Math.exp(-x)) || 0;
     const S = Math.max(0, Math.min(1, 1 - cdf_like));
     return S;
@@ -321,8 +327,9 @@
   const mealOutEl = document.getElementById('mealOut');
   const suggOutEl = document.getElementById('suggOut');
 
-  const chartCtx = document.getElementById('iobChart').getContext('2d');
-  let chart;
+  const delta30El = document.getElementById('delta30');
+  const delta60El = document.getElementById('delta60');
+  const trendPreviewEl = document.getElementById('trendPreview');
 
   // ===== UI Init =====
   function initControls(){
@@ -378,7 +385,33 @@
     }
   }
 
-  // ===== Top Summary + Chart =====
+  // ===== Trend (no chart) =====
+  function iobAtOffset(minsAhead){
+    const t = new Date(now().getTime() + minsAhead*60000);
+    return totalIOB(t, state.model, state.diaHours, state.doses);
+  }
+  function renderTrend(totalNow){
+    const iob15 = iobAtOffset(15);
+    const iob30 = iobAtOffset(30);
+    const iob45 = iobAtOffset(45);
+    const iob60 = iobAtOffset(60);
+
+    const d30 = iob30 - totalNow;
+    const d60 = iob60 - totalNow;
+
+    function fmtDelta(x){
+      const sign = x > 0 ? '+' : '';
+      const cls = x < -0.5 ? 'good' : (x < 0 ? 'warn' : (x === 0 ? '' : 'bad'));
+      return `<span class="${cls}">${sign}${fmt2(x)} U</span>`;
+    }
+
+    delta30El.innerHTML = `Δ30m: ${fmtDelta(d30)}`;
+    delta60El.innerHTML = `Δ60m: ${fmtDelta(d60)}`;
+    trendPreviewEl.innerHTML =
+      `Now: <b>${fmt2(totalNow)} U</b> | +15m: <b>${fmt2(iob15)} U</b> | +30m: <b>${fmt2(iob30)} U</b> | +45m: <b>${fmt2(iob45)} U</b> | +60m: <b>${fmt2(iob60)} U</b>`;
+  }
+
+  // ===== Top Summary + Legacy rounding =====
   function renderTop(){
     const total = totalIOB(now(), state.model, state.diaHours, state.doses);
     iobNowEl.textContent = `${fmt2(total)} U`;
@@ -406,44 +439,13 @@
     corrOutEl.value = `${corrWhole} U`;
     mealOutEl.value = `${mealWhole} U`;
     suggOutEl.value = `${suggestedWhole} U`;
-  }
 
-  function renderChart(){
-    const end = now();
-    const earliestDose = state.doses.length ? new Date(Math.min(...state.doses.map(d => +new Date(d.timeISO)))) : end;
-    const start = new Date(Math.min(end - 6*3600e3, +earliestDose));
-    const points = [];
-    for (let i=0; i<=60; i++){
-      const t = new Date(start.getTime() + i * (end - start)/60);
-      const y = totalIOB(t, state.model, state.diaHours, state.doses);
-      points.push({ x: t, y });
-    }
-    const labels = points.map(p => p.x);
-    const data = points.map(p => p.y);
-    if (chart){
-      chart.data.labels = labels;
-      chart.data.datasets[0].data = data;
-      chart.update();
-    } else {
-      chart = new Chart(chartCtx, {
-        type: 'line',
-        data: { labels, datasets: [{ label: 'IOB', data, tension: 0.25, fill: false }] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          scales: {
-            x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } },
-            y: { beginAtZero: true, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.06)' } }
-          },
-          plugins: { legend: { labels: { color: '#e5e7eb' } } }
-        }
-      });
-    }
+    renderTrend(total);
   }
 
   function renderAll(){
     renderDoses();
     renderTop();
-    renderChart();
   }
 
   // ===== Add/Clear =====
