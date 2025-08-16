@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IOB Calculator (Mobile Auto-Refresh) — v2</title>
+<title>IOB Calculator (Mobile Auto-Refresh) — v3 (Always On)</title>
 <style>
   :root { --pad: 14px; --radius: 14px; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; color: #111; background: #f7f7f8; }
@@ -37,12 +37,11 @@
 <body>
 <header>
   <h1>IOB Calculator</h1>
-  <div class="subtle">Mobile-friendly with auto-refresh. Unified storage; local time parsing.</div>
+  <div class="subtle">Mobile-friendly with auto-refresh (always on). Unified storage; local time parsing.</div>
   <div class="nowrow">
     <div>Now:</div><div id="nowClock" class="nowclock">—</div>
     <div class="toolbar">
       <button id="refreshBtn" class="secondary" style="padding:6px 10px">Refresh</button>
-      <label class="switch"><input type="checkbox" id="autoRefresh"> Auto-refresh (15s)</label>
       <label class="switch"><input type="checkbox" id="wakeLock"> Keep screen awake*</label>
     </div>
     <div class="muted">*Wake Lock works on some iPhones when added to Home Screen; if unsupported, this does nothing.</div>
@@ -174,7 +173,7 @@
     const [date, time] = parts;
     const [y, m, d] = date.split('-').map(n => parseInt(n,10));
     const [hh, mm] = time.split(':').map(n => parseInt(n,10));
-    if ([y,m,d,hh,mm].some(x => Number.isNaN(x))) return null;
+    if ([y,m,d,hh,mm].some x => Number.isNaN(x)) return null;
     return new Date(y, (m-1), d, hh, mm, 0, 0); // LOCAL
   }
   function toDatetimeLocalValue(ms){
@@ -186,10 +185,9 @@
   function fmt2(x){ return (Math.round(x * 100) / 100).toFixed(2); }
 
   // ===== IOB Models =====
-  // Smoothstep respects Tail as duration (0..tail -> 1..0)
   function iobPctSmooth(mins, tail){
     const t = Math.min(Math.max(mins, 0), tail);
-    const denom = Math.max(1, tail); // avoid /0
+    const denom = Math.max(1, tail);
     const x = Math.max(0, Math.min(1, t / denom));
     return Math.max(0, 1 - 3*x*x + 2*x*x*x);
   }
@@ -244,7 +242,6 @@
   const icrEl = document.getElementById('icr');
   const corrPctEl = document.getElementById('corrPct');
 
-  const autoRefreshEl = document.getElementById('autoRefresh');
   const wakeLockEl = document.getElementById('wakeLock');
 
   // ===== State & Persistence =====
@@ -259,7 +256,6 @@
     corrPct: 100,
     bg: '',
     carbs: '',
-    autoRefresh: true,
     wakeLock: false
   }, JSON.parse(localStorage.getItem(LS_CFG) || '{}'));
 
@@ -273,7 +269,6 @@
   corrPctEl.value = cfg.corrPct;
   bgEl.value = cfg.bg;
   carbsEl.value = cfg.carbs;
-  autoRefreshEl.checked = !!cfg.autoRefresh;
   wakeLockEl.checked = !!cfg.wakeLock;
 
   function getPct(mins, tail){
@@ -334,4 +329,133 @@
       tr.querySelector('[data-del]').onclick = ()=>{
         doses.splice(idx,1);
         localStorage.setItem(LS_DOSES, JSON.stringify(doses));
-        recalc(
+        recalc();
+      };
+      doseTableBody.appendChild(tr);
+    }
+
+    const calibrated = rawTotal * calibFactor;
+    rawIOBEl.textContent = fmt2(rawTotal);
+    totalIOBEl.textContent = fmt2(calibrated);
+
+    // Bolus helper (whole-unit, floored)
+    const bg = Number(bgEl.value);
+    const target = Number(targetEl.value);
+    const isf = Number(isfEl.value);
+    const icr = Number(icrEl.value);
+    const carbs = Number(carbsEl.value);
+    const corrPct = Math.max(0, Math.min(200, Number(corrPctEl.value)||100));
+
+    let corr = 0, meal = 0;
+    if (!isNaN(bg) && !isNaN(target) && !isNaN(isf) && isf > 0){
+      corr = Math.max(0, (bg - target) / isf) * (corrPct / 100);
+    }
+    if (!isNaN(carbs) && !isNaN(icr) && icr > 0){
+      meal = Math.max(0, carbs / icr);
+    }
+    const corrWhole = Math.max(0, Math.floor(corr));
+    const mealWhole = Math.max(0, Math.floor(meal));
+    const suggestedWhole = Math.max(0, Math.floor(corr + meal - calibrated));
+
+    corrDoseEl.textContent = String(corrWhole);
+    mealDoseEl.textContent = String(mealWhole);
+    totalDoseEl.textContent = String(suggestedWhole);
+
+    // Persist cfg
+    cfg = {
+      model: modelEl.value,
+      tail: Math.max(0, Number(tailEl.value)||180),
+      calib: Math.round(Math.max(10, Math.min(300, Number(calibEl.value)||100))),
+      target: (!isNaN(target) ? target : 120),
+      isf: (!isNaN(isf) ? isf : 50),
+      icr: (!isNaN(icr) ? icr : 25),
+      corrPct: (!isNaN(corrPct) ? corrPct : 100),
+      bg: (!isNaN(bg) ? bg : ""),
+      carbs: (!isNaN(carbs) ? carbs : ""),
+      wakeLock: wakeLockEl.checked
+    };
+    localStorage.setItem(LS_CFG, JSON.stringify(cfg));
+  }
+
+  function tickClock(){ nowClockEl.textContent = new Date().toLocaleString(); }
+
+  // Auto-refresh machinery (always on when visible)
+  let refreshTimer = null;
+  const REFRESH_MS = 15000;
+  function startAuto(){
+    stopAuto();
+    refreshTimer = setInterval(recalc, REFRESH_MS);
+  }
+  function stopAuto(){
+    if (refreshTimer){ clearInterval(refreshTimer); refreshTimer = null; }
+  }
+
+  // Wake Lock (optional)
+  let wakeLockSentinel = null;
+  async function requestWakeLock(){
+    try{
+      if ('wakeLock' in navigator){
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+        wakeLockSentinel.addEventListener('release', ()=>{ /* noop */ });
+      }
+    }catch(e){ /* unsupported or denied */ }
+  }
+  function releaseWakeLock(){
+    try{ if (wakeLockSentinel){ wakeLockSentinel.release(); wakeLockSentinel = null; } }catch(e){}
+  }
+
+  // Wire up
+  document.getElementById('recalcBtn').onclick = recalc;
+  refreshBtn.onclick = recalc;
+  modelEl.onchange = recalc;
+  tailEl.oninput = recalc;
+  calibEl.oninput = recalc;
+  wakeLockEl.onchange = ()=>{
+    cfg.wakeLock = wakeLockEl.checked;
+    if (cfg.wakeLock) requestWakeLock(); else releaseWakeLock();
+    localStorage.setItem(LS_CFG, JSON.stringify(cfg));
+  };
+
+  saveBtn.onclick = ()=>{
+    localStorage.setItem(LS_DOSES, JSON.stringify(doses));
+    localStorage.setItem(LS_CFG, JSON.stringify(cfg));
+    alert("Saved locally on this device.");
+  };
+
+  addDoseBtn.onclick = ()=>{
+    const units = Number(doseUnitsEl.value);
+    if (!(units > 0)) { alert("Enter dose units > 0"); return; }
+    let ms;
+    const dtVal = doseTimeEl.value;
+    if (dtVal && dtVal.length){
+      const parsed = parseLocalDatetime(dtVal);
+      if (!parsed || isNaN(parsed.getTime())){ alert("Could not parse that time. Use the date/time picker."); return; }
+      ms = parsed.getTime();
+    } else { ms = Date.now(); }
+    doses.push({ units, timeMs: ms });
+    localStorage.setItem(LS_DOSES, JSON.stringify(doses));
+    doseUnitsEl.value = ""; doseTimeEl.value = "";
+    recalc();
+  };
+  addNowBtn.onclick = ()=>{
+    doses.push({ units: 1, timeMs: Date.now() });
+    localStorage.setItem(LS_DOSES, JSON.stringify(doses));
+    recalc();
+  };
+
+  // Handle visibility/focus to keep minutes fresh
+  document.addEventListener('visibilitychange', ()=>{
+    if (!document.hidden){ recalc(); startAuto(); } else { stopAuto(); }
+  });
+  window.addEventListener('focus', ()=>{ recalc(); startAuto(); });
+  window.addEventListener('blur', ()=>{ stopAuto(); });
+
+  // Init
+  tickClock(); recalc();
+  setInterval(tickClock, 1000);
+  if (cfg.wakeLock) requestWakeLock();
+  startAuto();
+})();
+</script>
+</body>
+</html>
