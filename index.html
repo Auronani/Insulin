@@ -1,0 +1,166 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IOB Calculator — Unified Storage</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 1rem; max-width: 600px; margin: auto; }
+    h1 { font-size: 1.5rem; }
+    label { display: block; margin-top: 1rem; }
+    input, select, button, textarea { width: 100%; padding: 0.5rem; margin-top: 0.25rem; }
+    .row { display: flex; gap: 1rem; margin-top: 1rem; }
+    .row > div { flex: 1; }
+    .output { margin-top: 1rem; padding: 0.5rem; background: #f0f0f0; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>IOB Calculator — Unified Storage</h1>
+  <p>This build uses a unified storage key so all future versions log across each other. Export/Import are included for backup.</p>
+
+  <h2>Dose Log</h2>
+  <div class="row">
+    <div><label>Units <input id="doseUnits" type="number" step="0.1" /></label></div>
+    <div><label>Time <input id="doseTime" type="datetime-local" /></label></div>
+  </div>
+  <button onclick="addDose()">Add Dose</button>
+  <ul id="doseList"></ul>
+
+  <h2>Settings</h2>
+  <label>Model
+    <select id="model">
+      <option value="jade">Jade-fit</option>
+      <option value="smooth">Smoothstep 3h</option>
+      <option value="walsh">Walsh 3h</option>
+    </select>
+  </label>
+  <label>Calibration % <input id="calib" type="number" step="1" value="100" /></label>
+  <label>Tail (minutes) <input id="tail" type="number" value="180" /></label>
+
+  <h2>Bolus Helper</h2>
+  <label>BG <input id="bg" type="number" /></label>
+  <label>Target <input id="target" type="number" value="120" /></label>
+  <label>Carbs <input id="carbs" type="number" /></label>
+  <label>ISF <input id="isf" type="number" value="25" /></label>
+  <label>ICR <input id="icr" type="number" value="25" /></label>
+  <div class="output" id="bolusOutput"></div>
+
+  <h2>IOB Now</h2>
+  <div class="output" id="iobOutput">0.00</div>
+
+  <h2>Backup</h2>
+  <button onclick="exportData()">Export</button>
+  <textarea id="importBox" placeholder="Paste JSON here"></textarea>
+  <button onclick="importData()">Import</button>
+
+  <script>
+    const STORAGE_KEY = "iob_unified_storage";
+    let doses = [];
+    let settings = { model:"jade", calib:100, tail:180, bg:0, target:120, carbs:0, isf:25, icr:25 };
+
+    function save() {
+      const data = { doses, settings };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+    function load() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          if (data.doses) doses = data.doses;
+          if (data.settings) settings = data.settings;
+        } catch {}
+      }
+      render();
+    }
+
+    function addDose() {
+      const units = parseFloat(document.getElementById("doseUnits").value);
+      const time = document.getElementById("doseTime").value;
+      if (!units || !time) return;
+      doses.push({ units, time });
+      save();
+      render();
+    }
+
+    function render() {
+      const list = document.getElementById("doseList");
+      list.innerHTML = "";
+      doses.forEach((d,i)=>{
+        const li = document.createElement("li");
+        li.textContent = d.units+"u @ "+d.time;
+        list.appendChild(li);
+      });
+      document.getElementById("model").value = settings.model;
+      document.getElementById("calib").value = settings.calib;
+      document.getElementById("tail").value = settings.tail;
+      document.getElementById("bg").value = settings.bg;
+      document.getElementById("target").value = settings.target;
+      document.getElementById("carbs").value = settings.carbs;
+      document.getElementById("isf").value = settings.isf;
+      document.getElementById("icr").value = settings.icr;
+      compute();
+    }
+
+    function fracRemaining(mins, model, tail) {
+      if (mins >= tail) return 0;
+      const x = mins / tail;
+      if (model==="smooth") return 1 - (3*x*x - 2*x*x*x);
+      if (model==="walsh") return (1 - x)*(1 - x);
+      return 1 - x; // simple linear for Jade-fit placeholder
+    }
+
+    function compute() {
+      settings.model = document.getElementById("model").value;
+      settings.calib = parseFloat(document.getElementById("calib").value);
+      settings.tail = parseFloat(document.getElementById("tail").value);
+      settings.bg = parseFloat(document.getElementById("bg").value);
+      settings.target = parseFloat(document.getElementById("target").value);
+      settings.carbs = parseFloat(document.getElementById("carbs").value);
+      settings.isf = parseFloat(document.getElementById("isf").value);
+      settings.icr = parseFloat(document.getElementById("icr").value);
+
+      let iob = 0;
+      const now = Date.now();
+      doses.forEach(d=>{
+        const t = new Date(d.time).getTime();
+        const mins = (now - t)/60000;
+        const rem = fracRemaining(mins, settings.model, settings.tail);
+        iob += d.units * rem;
+      });
+      iob = iob * settings.calib/100;
+      document.getElementById("iobOutput").textContent = iob.toFixed(2);
+
+      const correction = Math.max(0, Math.floor((settings.bg - settings.target)/settings.isf));
+      const meal = Math.max(0, Math.floor(settings.carbs/settings.icr));
+      const suggestion = Math.max(0, Math.floor(correction+meal - iob));
+      document.getElementById("bolusOutput").innerHTML =
+        "Correction: "+correction+"u<br>Meal: "+meal+"u<br>Suggested: "+suggestion+"u";
+
+      save();
+    }
+
+    function exportData() {
+      const data = { doses, settings };
+      navigator.clipboard.writeText(JSON.stringify(data));
+      alert("Exported to clipboard!");
+    }
+
+    function importData() {
+      try {
+        const data = JSON.parse(document.getElementById("importBox").value);
+        if (data.doses) doses = data.doses;
+        if (data.settings) settings = data.settings;
+        save();
+        render();
+      } catch(e) {
+        alert("Invalid JSON");
+      }
+    }
+
+    document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change",compute));
+    load();
+  </script>
+</body>
+</html>
