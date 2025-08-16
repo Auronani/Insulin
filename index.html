@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IOB Calculator (Mobile Auto-Refresh) — v3.1 (Always On)</title>
+<title>IOB Calculator — v4 (Clean Rebuild)</title>
 <style>
   :root { --pad: 14px; --radius: 14px; }
+  * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; color: #111; background: #f7f7f8; }
   header { position: sticky; top: 0; background: white; padding: var(--pad); border-bottom: 1px solid #e6e6ea; z-index: 10; }
   h1 { font-size: 20px; margin: 0 0 4px 0; }
@@ -16,8 +17,8 @@
   .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--pad); }
   .row-4 { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: var(--pad); }
   label { font-size: 13px; color: #333; display: block; margin-bottom: 6px; }
-  input, select, button, textarea { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 12px; border: 1px solid #d9d9df; font-size: 16px; background: #fff; }
-  button { background: #111; color: white; border: none; }
+  input, select, button { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #d9d9df; font-size: 16px; background: #fff; }
+  button { background: #111; color: white; border: none; cursor: pointer; }
   button.secondary { background: #f0f0f3; color: #333; border: 1px solid #d9d9df; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
@@ -25,27 +26,25 @@
   td.right { text-align: right; }
   .footer { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e6e6ea; padding: 10px var(--pad); display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; z-index: 20; }
   .pill { background: #f3f3f6; border: 1px solid #e6e6ea; border-radius: 999px; padding: 8px 12px; font-weight: 600; font-size: 14px; display: inline-block; margin-right: 8px; }
-  .timePrimary { font-weight: 600; }
-  .timeSecondary { font-size: 12px; color: #666; }
+  .muted { color:#666; font-size:12px; }
   .nowrow { display:flex; gap:10px; align-items:center; margin-top:6px; flex-wrap: wrap; }
   .nowclock { font-variant-numeric: tabular-nums; }
   .toolbar { display:flex; gap:10px; flex-wrap:wrap; }
-  .muted { color:#666; font-size:12px; }
-  .switch { display:flex; align-items:center; gap:8px; }
+  .error { color:#b00020; font-size:13px; }
 </style>
 </head>
 <body>
 <header>
   <h1>IOB Calculator</h1>
-  <div class="subtle">Mobile-friendly with auto-refresh (always on). Unified storage; local time parsing.</div>
+  <div class="subtle">Mobile-friendly, auto-refresh baked in. Local storage; local time parsing. v4</div>
   <div class="nowrow">
     <div>Now:</div><div id="nowClock" class="nowclock">—</div>
     <div class="toolbar">
       <button id="refreshBtn" class="secondary" style="padding:6px 10px">Refresh</button>
-      <label class="switch"><input type="checkbox" id="wakeLock"> Keep screen awake*</label>
+      <button id="resetBtn" class="secondary" style="padding:6px 10px">Reset Local Data</button>
     </div>
-    <div class="muted">*Wake Lock works on some iPhones when added to Home Screen; if unsupported, this does nothing.</div>
   </div>
+  <div id="err" class="error"></div>
 </header>
 
 <main>
@@ -106,8 +105,7 @@
       </div>
     </div>
     <div class="muted" style="margin-top:6px;">
-      Correction, Meal, and Suggested are <b>floored</b> to whole units.
-      The Correction dose is scaled by <b>Correction %</b> before flooring.
+      Correction, Meal, and Suggested are <b>floored</b> to whole units. Correction is scaled by <b>Correction %</b> before flooring.
     </div>
   </section>
 
@@ -116,7 +114,7 @@
     <div class="row">
       <div>
         <label for="doseUnits">Dose (units)</label>
-        <input type="number" id="doseUnits" inputmode="decimal" step="0.1" placeholder="e.g., 1.5">
+        <input type="number" id="doseUnits" inputmode="decimal" step="any" placeholder="e.g., 1.5">
       </div>
       <div>
         <label for="doseTime">Time Given</label>
@@ -160,18 +158,67 @@
 </div>
 
 <script>
+'use strict';
 (function(){
-  // ===== Unified Keys =====
-  const LS_DOSES = 'iob_doses_unified';
-  const LS_CFG   = 'iob_cfg_unified';
+  // ===== Utilities =====
+  const LS_DOSES = 'iob_doses_unified_v4';
+  const LS_CFG   = 'iob_cfg_unified_v4';
 
-  // ===== Helpers =====
-  function parseLocalDatetime(dtStr){
-    if (!dtStr || typeof dtStr !== 'string') return null;
-    const parts = dtStr.split('T');
-    if (parts.length !== 2) return null;
-    const [date, time] = parts;
-    const [y, m, d] = date.split('-').map(n => parseInt(n,10));
-    const [hh, mm] = time.split(':').map(n => parseInt(n,10));
-    if ([y,m,d,hh,mm].some(x => Number.isNaN(x))) return null; // FIXED
-    return
+  const $ = (sel) => document.querySelector(sel);
+  const errEl = $('#err');
+  function setErr(msg){ errEl.textContent = msg || ''; }
+  function fmt2(x){ return (Math.round(x * 100) / 100).toFixed(2); }
+  function parseNum(input){
+    if (input == null) return NaN;
+    const s = String(input).trim().replace(',', '.');
+    return Number(s);
+  }
+  function safeGetJSON(key, fallback){
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return fallback;
+      const v = JSON.parse(raw);
+      return (v == null ? fallback : v);
+    } catch { return fallback; }
+  }
+  function parseLocalDatetime(val){
+    // Expects "YYYY-MM-DDTHH:MM"
+    if (!val || typeof val !== 'string' || !val.includes('T')) return null;
+    const [date, time] = val.split('T');
+    const [y,m,d] = date.split('-').map(n => parseInt(n,10));
+    const [hh,mm]  = time.split(':').map(n => parseInt(n,10));
+    if ([y,m,d,hh,mm].some(x => Number.isNaN(x))) return null;
+    return new Date(y, m-1, d, hh, mm, 0, 0); // local time
+  }
+  function toDatetimeLocalValue(ms){
+    const dt = new Date(ms);
+    const pad = n => String(n).padStart(2,'0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
+  function toReadable(ms){ return new Date(ms).toLocaleString(); }
+
+  // ===== IOB Models =====
+  function iobPctSmooth(mins, tail){
+    const t = Math.min(Math.max(mins, 0), Math.max(1, tail));
+    const x = t / Math.max(1, tail);
+    const p = 1 - 3*x*x + 2*x*x*x; // smoothstep(1 - x)
+    return Math.max(0, Math.min(1, p));
+  }
+  function iobPctWalsh(mins, tail){
+    const t = Math.min(Math.max(mins, 0), tail);
+    const p = 1 - 0.001852*t*t + 0.00002352*t*t*t - 0.0000001032*t*t*t*t;
+    return Math.max(0, Math.min(1, p));
+  }
+  function iobPctJade(mins, tail){
+    const t = Math.min(Math.max(mins, 0), tail);
+    const theta = 56.6773;
+    const x = t / theta;
+    const sqrtx = Math.sqrt(Math.max(0, x));
+    function erfApprox(z){
+      const sign = z < 0 ? -1 : 1;
+      const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+      const tt=1/(1+p*Math.abs(z));
+      const y=1-((((a5*tt+a4)*tt+a3)*tt+a2)*tt+a1)*tt*Math.exp(-z*z);
+      return sign*y;
+    }
+    const c
